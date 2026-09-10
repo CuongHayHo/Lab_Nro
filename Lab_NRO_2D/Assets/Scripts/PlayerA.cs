@@ -122,24 +122,24 @@ public class PlayerA : MonoBehaviour
     [Tooltip("Nút UI tung chưởng trên màn hình")]
     public UnityEngine.UI.Button attackButton;
 
-    [Tooltip("Kích thước nút bấm tung chưởng trên màn hình (Mặc định: 90)")]
-    public float attackButtonSize = 90f;
+    [Tooltip("Kích thước nút bấm tung chưởng trên màn hình (Mặc định: 150)")]
+    public float attackButtonSize = 150f;
 
     [Tooltip("Khoảng cách từ góc phải-dưới màn hình (X: cách lề phải, Y: cách lề dưới)")]
-    public Vector2 attackButtonMargin = new Vector2(80f, 80f);
+    public Vector2 attackButtonMargin = new Vector2(130f, 130f);
 
     [Header("4 Nút Di Chuyển (D-Pad: Small2322.png)")]
     [Tooltip("Sprite cho 4 nút di chuyển (Small2322.png)")]
     public Sprite moveButtonSprite;
 
-    [Tooltip("Kích thước mỗi nút di chuyển (Mặc định: 65)")]
-    public float moveButtonSize = 65f;
+    [Tooltip("Kích thước mỗi nút di chuyển (Mặc định: 135)")]
+    public float moveButtonSize = 135f;
 
-    [Tooltip("Khoảng cách giữa tâm cụm D-Pad và mỗi nút (Mặc định: 60)")]
-    public float moveButtonSpacing = 60f;
+    [Tooltip("Khoảng cách giữa tâm cụm D-Pad và mỗi nút (Mặc định: 110)")]
+    public float moveButtonSpacing = 110f;
 
     [Tooltip("Tọa độ cụm nút di chuyển từ góc dưới-trái màn hình (X: cách lề trái, Y: cách lề dưới)")]
-    public Vector2 moveDpadPosition = new Vector2(135f, 135f);
+    public Vector2 moveDpadPosition = new Vector2(210f, 210f);
 
     private bool isHoldingLeft = false;
     private bool isHoldingRight = false;
@@ -154,6 +154,15 @@ public class PlayerA : MonoBehaviour
     [Range(1, 10)]
     [Tooltip("Số lượng nhân vật B cùng xuất hiện trên màn hình (Mặc định: 3)")]
     public int enemyBCount = 3;
+
+    [Tooltip("Prefab của Enemy B (hỗ trợ sinh runtime APK)")]
+    public GameObject enemyBPrefab;
+
+    [Tooltip("Sprite đầu đứng của B (Small91.png)")]
+    public Sprite enemyBHeadIdle;
+
+    [Tooltip("Sprite đầu di chuyển của B (Small92.png)")]
+    public Sprite enemyBHeadMove;
 
     [Header("Bắn Đối Tượng C")]
     public GameObject projectileCPrefab;
@@ -301,14 +310,18 @@ public class PlayerA : MonoBehaviour
         if (Mathf.Approximately(jumpHeadOffset, -0.35f) || jumpHeadOffset <= -0.5f) jumpHeadOffset = -0.20f;
         if (Mathf.Approximately(jumpLegOffset, 0.25f) || jumpLegOffset <= 0.05f) jumpLegOffset = 0.45f;
 
+        // Tự động nâng cấp kích thước D-Pad và Attack Button lên chuẩn di động thoải mái
+        if (moveButtonSize < 100f) moveButtonSize = 135f;
+        if (moveButtonSpacing < 80f) moveButtonSpacing = 110f;
+        if (moveDpadPosition.x < 150f) moveDpadPosition = new Vector2(210f, 210f);
+        if (attackButtonSize < 120f) attackButtonSize = 150f;
+        if (attackButtonMargin.x < 100f) attackButtonMargin = new Vector2(130f, 130f);
+
 #if UNITY_EDITOR
         if (headIdle == null || bodyIdle == null || legIdle == null || auraFrames == null || auraFrames.Length == 0 || (auraFrames[0] != null && auraFrames[0].name.Contains("Small35")))
         {
             AutoAssignSprites();
         }
-
-        EnsureEnemyBCount();
-        targetEnemyB = GetNearestEnemyB();
 
         if (projectileCPrefab == null)
         {
@@ -320,6 +333,10 @@ public class PlayerA : MonoBehaviour
             }
         }
 #endif
+
+        // Khởi tạo và đảm bảo số lượng Enemy B ở CẢ Editor và Runtime (APK độc lập)
+        EnsureEnemyBCount();
+        targetEnemyB = GetNearestEnemyB();
 
         if (Camera.main != null)
         {
@@ -351,20 +368,89 @@ public class PlayerA : MonoBehaviour
     {
         if (isChargingOrFiring) return;
 
-        if (Input.GetMouseButtonDown(0))
+        HandleAttackInput();
+        HandleMovement();
+        HandleJump();
+    }
+
+    /// <summary>
+    /// Xử lý tung chưởng mượt mà, phân biệt rõ ràng giữa chạm UI di chuyển và chạm tung chưởng:
+    /// - Không bao giờ tung chưởng nhầm khi ngón tay đang chạm vào D-Pad hoặc bất kỳ UI nào.
+    /// - Tuyệt đối không tung chưởng khi chạm ở nửa trái màn hình (vùng ngón cái điều khiển D-Pad).
+    /// - Hỗ trợ phím tắt bàn phím: J, K, Enter.
+    /// </summary>
+    private void HandleAttackInput()
+    {
+        // 1. Phím tắt bàn phím tiện lợi trên PC / Editor
+        if (Input.GetKeyDown(KeyCode.J) || Input.GetKeyDown(KeyCode.K) || Input.GetKeyDown(KeyCode.Return))
         {
-            // Nếu click trúng UI Button thì để Button.onClick xử lý, tránh gọi 2 lần
-            if (UnityEngine.EventSystems.EventSystem.current != null &&
-                UnityEngine.EventSystems.EventSystem.current.IsPointerOverGameObject())
-            {
-                return;
-            }
             TriggerAttack();
             return;
         }
 
-        HandleMovement();
-        HandleJump();
+        // 2. Xử lý cảm ứng trên thiết bị di động (Mobile Touch)
+        if (Input.touchSupported && Input.touchCount > 0)
+        {
+            for (int i = 0; i < Input.touchCount; i++)
+            {
+                Touch t = Input.GetTouch(i);
+                if (t.phase == TouchPhase.Began)
+                {
+                    // Nếu ngón tay chạm vào bất kỳ UI nào (D-Pad, nút Attack, v.v.) thì bỏ qua
+                    if (IsPointerOverUI(t.fingerId))
+                    {
+                        continue;
+                    }
+
+                    // Tuyệt đối không tung chưởng nếu chạm ở nửa trái màn hình (vùng tay cầm di chuyển)
+                    if (t.position.x < Screen.width * 0.5f)
+                    {
+                        continue;
+                    }
+
+                    // Chạm nhanh vào khoảng trống ở nửa phải màn hình có thể kích hoạt chưởng
+                    TriggerAttack();
+                    return;
+                }
+            }
+        }
+        else
+        {
+            // 3. Chuột trên PC / Editor (Click chuột trái ngoài UI)
+            if (Input.GetMouseButtonDown(0))
+            {
+                if (IsPointerOverUI(-1))
+                {
+                    return;
+                }
+                TriggerAttack();
+                return;
+            }
+        }
+    }
+
+    /// <summary>
+    /// Kiểm tra con trỏ hoặc ngón tay cảm ứng có đang đè lên UI hay không (Hỗ trợ đa điểm fingerId)
+    /// </summary>
+    public static bool IsPointerOverUI(int fingerId = -1)
+    {
+        if (UnityEngine.EventSystems.EventSystem.current == null) return false;
+
+        if (fingerId >= 0)
+        {
+            return UnityEngine.EventSystems.EventSystem.current.IsPointerOverGameObject(fingerId);
+        }
+
+        if (Input.touchCount > 0)
+        {
+            for (int i = 0; i < Input.touchCount; i++)
+            {
+                if (UnityEngine.EventSystems.EventSystem.current.IsPointerOverGameObject(Input.GetTouch(i).fingerId))
+                    return true;
+            }
+        }
+
+        return UnityEngine.EventSystems.EventSystem.current.IsPointerOverGameObject();
     }
 
     private void LateUpdate()
@@ -832,8 +918,9 @@ public class PlayerA : MonoBehaviour
         return best;
     }
 
-#if UNITY_EDITOR
-    [ContextMenu("Nhân Bản Đủ Số Lượng B (1-Click)")]
+    /// <summary>
+    /// Đảm bảo số lượng Enemy B luôn đủ theo cấu hình enemyBCount (Chạy được ở cả Editor và Runtime APK)
+    /// </summary>
     public void EnsureEnemyBCount()
     {
         EnemyB[] existing = FindObjectsByType<EnemyB>(FindObjectsSortMode.None);
@@ -866,7 +953,9 @@ public class PlayerA : MonoBehaviour
         }
 
         targetEnemyB = GetNearestEnemyB();
-        EditorUtility.SetDirty(this);
+#if UNITY_EDITOR
+        if (!Application.isPlaying) EditorUtility.SetDirty(this);
+#endif
     }
 
     [ContextMenu("Xóa Toàn Bộ B Để Tạo Lại")]
@@ -877,14 +966,59 @@ public class PlayerA : MonoBehaviour
         {
             foreach (var e in existing)
             {
-                if (e != null) DestroyImmediate(e.gameObject);
+                if (e != null)
+                {
+#if UNITY_EDITOR
+                    if (!Application.isPlaying) DestroyImmediate(e.gameObject);
+                    else Destroy(e.gameObject);
+#else
+                    Destroy(e.gameObject);
+#endif
+                }
             }
         }
         EnsureEnemyBCount();
     }
 
+    /// <summary>
+    /// Tạo 1 đối tượng B (Vegeta): An toàn 100% khi chạy độc lập trong file APK (không lỗi thiếu AssetDatabase)
+    /// </summary>
     public GameObject CreateSingleEnemyB(int id = 1)
     {
+        // 1. Ưu tiên sinh từ Prefab nếu có
+        if (enemyBPrefab != null)
+        {
+            GameObject obj = Instantiate(enemyBPrefab);
+            obj.name = "Enemy_B_" + id;
+            if (Camera.main != null)
+            {
+                float randomX = Random.Range(0.72f, 0.94f);
+                float randomY = Random.Range(0.18f, 0.82f);
+                Vector3 spawnPos = Camera.main.ViewportToWorldPoint(new Vector3(randomX, randomY, 10f));
+                spawnPos.z = 0f;
+                obj.transform.position = spawnPos;
+            }
+            return obj;
+        }
+
+        // 2. Nếu trong Scene đã có ít nhất 1 con B, nhân bản (clone) nhanh
+        EnemyB existingOne = FindFirstObjectByType<EnemyB>();
+        if (existingOne != null)
+        {
+            GameObject obj = Instantiate(existingOne.gameObject);
+            obj.name = "Enemy_B_" + id;
+            if (Camera.main != null)
+            {
+                float randomX = Random.Range(0.72f, 0.94f);
+                float randomY = Random.Range(0.18f, 0.82f);
+                Vector3 spawnPos = Camera.main.ViewportToWorldPoint(new Vector3(randomX, randomY, 10f));
+                spawnPos.z = 0f;
+                obj.transform.position = spawnPos;
+            }
+            return obj;
+        }
+
+        // 3. Khởi tạo mới từ mã nguồn với các sprite đã serialized sẵn
         GameObject enemyObj = new GameObject("Enemy_B_" + id);
         CharacterParts cParts = enemyObj.AddComponent<CharacterParts>();
         EnemyB eB = enemyObj.AddComponent<EnemyB>();
@@ -921,9 +1055,19 @@ public class PlayerA : MonoBehaviour
         eB.characterScale = characterScale;
         eB.headHeight = 1.1375f;
 
-        eB.headIdle = AssetDatabase.LoadAssetAtPath<Sprite>("Assets/Sprites/Small91.png");
-        eB.headMove = AssetDatabase.LoadAssetAtPath<Sprite>("Assets/Sprites/Small92.png");
+        // Gán sprite đã serialize của B
+        eB.headIdle = enemyBHeadIdle;
+        eB.headMove = enemyBHeadMove;
+        eB.bodyIdle = bodyIdle;
+        eB.legIdle = legIdle;
+        eB.bodyMoveFrames = bodyMoveFrames;
+        eB.legMoveFrames = legMoveFrames;
+
+#if UNITY_EDITOR
+        if (eB.headIdle == null) eB.headIdle = AssetDatabase.LoadAssetAtPath<Sprite>("Assets/Sprites/Small91.png");
+        if (eB.headMove == null) eB.headMove = AssetDatabase.LoadAssetAtPath<Sprite>("Assets/Sprites/Small92.png");
         eB.AutoAssignSprites();
+#endif
 
         if (Camera.main != null)
         {
@@ -934,10 +1078,13 @@ public class PlayerA : MonoBehaviour
             enemyObj.transform.position = spawnPos;
         }
 
-        EditorUtility.SetDirty(enemyObj);
+#if UNITY_EDITOR
+        if (!Application.isPlaying) EditorUtility.SetDirty(enemyObj);
+#endif
         return enemyObj;
     }
 
+#if UNITY_EDITOR
     [ContextMenu("Tạo Lại Enemy B Chuẩn 100% (1-Click)")]
     public void CreateEnemyBInScene()
     {
@@ -1000,6 +1147,22 @@ public class PlayerA : MonoBehaviour
             AssetDatabase.LoadAssetAtPath<Sprite>(p + "Small50.png"),
             AssetDatabase.LoadAssetAtPath<Sprite>(p + "Small51.png")
         };
+
+        enemyBHeadIdle = AssetDatabase.LoadAssetAtPath<Sprite>(p + "Small91.png");
+        enemyBHeadMove = AssetDatabase.LoadAssetAtPath<Sprite>(p + "Small92.png");
+        if (enemyBPrefab == null)
+        {
+            enemyBPrefab = AssetDatabase.LoadAssetAtPath<GameObject>("Assets/Prefabs/Enemy_B.prefab");
+            if (enemyBPrefab == null)
+            {
+                enemyBPrefab = AssetDatabase.LoadAssetAtPath<GameObject>("Assets/Enemy_B.prefab");
+            }
+        }
+
+        if (projectileCPrefab == null)
+        {
+            projectileCPrefab = AssetDatabase.LoadAssetAtPath<GameObject>("Assets/Projectile_C.prefab");
+        }
 
         EnsureAttackButton();
         EditorUtility.SetDirty(this);
@@ -1074,10 +1237,27 @@ public class PlayerA : MonoBehaviour
         rt.sizeDelta = new Vector2(attackButtonSize, attackButtonSize);
         rt.anchoredPosition = new Vector2(-attackButtonMargin.x, attackButtonMargin.y);
 
+        // Đĩa nền mờ phía sau nút tung chưởng giúp nút nổi bật rõ trên mọi khung cảnh
+        Transform bgTrans = btnObj.transform.Find("Attack_BG");
+        GameObject bgObj = bgTrans != null ? bgTrans.gameObject : new GameObject("Attack_BG");
+        bgObj.transform.SetParent(btnObj.transform, false);
+        bgObj.transform.SetAsFirstSibling();
+        RectTransform bgRt = bgObj.GetComponent<RectTransform>();
+        if (bgRt == null) bgRt = bgObj.AddComponent<RectTransform>();
+        bgRt.anchorMin = Vector2.zero;
+        bgRt.anchorMax = Vector2.one;
+        bgRt.sizeDelta = new Vector2(16f, 16f);
+        bgRt.anchoredPosition = Vector2.zero;
+        UnityEngine.UI.Image bgImg = bgObj.GetComponent<UnityEngine.UI.Image>();
+        if (bgImg == null) bgImg = bgObj.AddComponent<UnityEngine.UI.Image>();
+        bgImg.color = new Color(0f, 0f, 0f, 0.28f);
+        bgImg.raycastTarget = false;
+
         UnityEngine.UI.Image img = btnObj.GetComponent<UnityEngine.UI.Image>();
         if (img == null) img = btnObj.AddComponent<UnityEngine.UI.Image>();
         if (attackButtonSprite != null) img.sprite = attackButtonSprite;
         img.preserveAspect = true;
+        img.raycastTarget = true;
 
         UnityEngine.UI.Button btn = btnObj.GetComponent<UnityEngine.UI.Button>();
         if (btn == null) btn = btnObj.AddComponent<UnityEngine.UI.Button>();
@@ -1090,6 +1270,16 @@ public class PlayerA : MonoBehaviour
 
         btn.onClick.RemoveAllListeners();
         btn.onClick.AddListener(TriggerAttack);
+
+        // Kích hoạt chưởng tức thì ngay khi ngón tay vừa chạm vào nút (PointerDown)
+        UnityEngine.EventSystems.EventTrigger atkTrigger = btnObj.GetComponent<UnityEngine.EventSystems.EventTrigger>();
+        if (atkTrigger == null) atkTrigger = btnObj.AddComponent<UnityEngine.EventSystems.EventTrigger>();
+        atkTrigger.triggers.Clear();
+        var atkDownEntry = new UnityEngine.EventSystems.EventTrigger.Entry();
+        atkDownEntry.eventID = UnityEngine.EventSystems.EventTriggerType.PointerDown;
+        atkDownEntry.callback.AddListener((data) => { TriggerAttack(); });
+        atkTrigger.triggers.Add(atkDownEntry);
+
         attackButton = btn;
 
         // 4. Cụm 4 Nút Di Chuyển D-Pad (Góc Dưới-Trái: Small2322.png)
@@ -1117,6 +1307,24 @@ public class PlayerA : MonoBehaviour
         dpadRt.pivot = new Vector2(0.5f, 0.5f);
         dpadRt.anchoredPosition = moveDpadPosition;
 
+        // Đĩa nền mờ phía sau cụm D-Pad giúp người chơi dễ định vị vùng điều khiển trên điện thoại
+        Transform bgTrans = dpadObj.transform.Find("Dpad_BG");
+        GameObject bgObj = bgTrans != null ? bgTrans.gameObject : new GameObject("Dpad_BG");
+        bgObj.transform.SetParent(dpadObj.transform, false);
+        bgObj.transform.SetAsFirstSibling();
+        RectTransform bgRt = bgObj.GetComponent<RectTransform>();
+        if (bgRt == null) bgRt = bgObj.AddComponent<RectTransform>();
+        bgRt.anchorMin = new Vector2(0.5f, 0.5f);
+        bgRt.anchorMax = new Vector2(0.5f, 0.5f);
+        bgRt.pivot = new Vector2(0.5f, 0.5f);
+        float bgSize = moveButtonSpacing * 2f + moveButtonSize + 30f;
+        bgRt.sizeDelta = new Vector2(bgSize, bgSize);
+        bgRt.anchoredPosition = Vector2.zero;
+        UnityEngine.UI.Image bgImg = bgObj.GetComponent<UnityEngine.UI.Image>();
+        if (bgImg == null) bgImg = bgObj.AddComponent<UnityEngine.UI.Image>();
+        bgImg.color = new Color(0f, 0f, 0f, 0.22f);
+        bgImg.raycastTarget = false;
+
         // 4 nút: Lên (Nhảy / W), Xuống (S), Trái (A), Phải (D)
         CreateSingleDirButton(dpadObj, "Button_Up", new Vector2(0f, moveButtonSpacing), "▲", () => { TryJump(); }, null);
         CreateSingleDirButton(dpadObj, "Button_Down", new Vector2(0f, -moveButtonSpacing), "▼", () => { isHoldingDown = true; }, () => { isHoldingDown = false; });
@@ -1139,6 +1347,7 @@ public class PlayerA : MonoBehaviour
         if (img == null) img = btnObj.AddComponent<UnityEngine.UI.Image>();
         if (moveButtonSprite != null) img.sprite = moveButtonSprite;
         img.preserveAspect = true;
+        img.raycastTarget = true;
 
         UnityEngine.UI.Button btn = btnObj.GetComponent<UnityEngine.UI.Button>();
         if (btn == null) btn = btnObj.AddComponent<UnityEngine.UI.Button>();
@@ -1149,7 +1358,7 @@ public class PlayerA : MonoBehaviour
         colors.pressedColor = new Color(0.7f, 0.7f, 0.7f, 1f);
         btn.colors = colors;
 
-        // Nhãn mũi tên (▲, ▼, ◄, ►)
+        // Nhãn mũi tên to rõ ràng (▲, ▼, ◄, ►)
         Transform textChild = btnObj.transform.Find("Label");
         GameObject textObj = textChild != null ? textChild.gameObject : new GameObject("Label");
         textObj.transform.SetParent(btnObj.transform, false);
@@ -1164,7 +1373,8 @@ public class PlayerA : MonoBehaviour
         if (txt == null) txt = textObj.AddComponent<UnityEngine.UI.Text>();
         txt.text = label;
         txt.alignment = TextAnchor.MiddleCenter;
-        txt.fontSize = 20;
+        txt.fontSize = 44;
+        txt.fontStyle = FontStyle.Bold;
         txt.color = Color.white;
         txt.raycastTarget = false;
         Font f = Resources.GetBuiltinResource<Font>("LegacyRuntime.ttf");

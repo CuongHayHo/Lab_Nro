@@ -40,28 +40,70 @@ public static class SceneSetupHelper
             pos.y = targetGround;
             playerA.transform.position = pos;
             playerA.headHeight = 1.5375f;
+            playerA.characterScale = 0.2f;
             CharacterParts cp = playerA.GetComponent<CharacterParts>();
             if (cp != null)
             {
                 cp.headHeight = 1.5375f;
+                cp.characterScale = 0.2f;
                 cp.SyncAndApplyAll();
             }
+
+            // Tự động gán toàn bộ sprites cho A và B
+            playerA.AutoAssignSprites();
+
+            // Gán đạn Projectile_C
+            if (playerA.projectileCPrefab == null)
+            {
+                playerA.projectileCPrefab = AssetDatabase.LoadAssetAtPath<GameObject>("Assets/Projectile_C.prefab");
+            }
+
+            // Đảm bảo thư mục Assets/Prefabs tồn tại
+            if (!AssetDatabase.IsValidFolder("Assets/Prefabs"))
+            {
+                AssetDatabase.CreateFolder("Assets", "Prefabs");
+            }
+
+            // Đảm bảo đủ số lượng Enemy B trong Scene
+            playerA.EnsureEnemyBCount();
+
+            // Tạo Prefab Enemy_B.prefab từ đối tượng Enemy B đầu tiên nếu chưa có
+            EnemyB firstB = Object.FindFirstObjectByType<EnemyB>();
+            if (firstB != null)
+            {
+                string prefabPath = "Assets/Prefabs/Enemy_B.prefab";
+                GameObject existingPrefab = AssetDatabase.LoadAssetAtPath<GameObject>(prefabPath);
+                if (existingPrefab == null)
+                {
+                    PrefabUtility.SaveAsPrefabAsset(firstB.gameObject, prefabPath);
+                    AssetDatabase.Refresh();
+                }
+                playerA.enemyBPrefab = AssetDatabase.LoadAssetAtPath<GameObject>(prefabPath);
+            }
+
+            // Đảm bảo UI Canvas, D-Pad lớn và nút chưởng lưu cứng vào Scene
+            playerA.EnsureAttackButton();
+
             EditorUtility.SetDirty(playerA);
         }
 
-        // 3. Đồng bộ EnemyB
+        // 3. Đồng bộ và lưu toàn bộ EnemyB trong Scene
         EnemyB[] enemies = Object.FindObjectsByType<EnemyB>(FindObjectsSortMode.None);
-        foreach (var e in enemies)
+        for (int i = 0; i < enemies.Length; i++)
         {
+            var e = enemies[i];
             if (e != null)
             {
                 e.headHeight = 1.1375f;
+                e.characterScale = 0.2f;
                 CharacterParts cp = e.GetComponent<CharacterParts>();
                 if (cp != null)
                 {
                     cp.headHeight = 1.1375f;
+                    cp.characterScale = 0.2f;
                     cp.SyncAndApplyAll();
                 }
+                e.AutoAssignSprites();
                 EditorUtility.SetDirty(e);
             }
         }
@@ -82,7 +124,7 @@ public static class SceneSetupHelper
         EditorSceneManager.MarkSceneDirty(activeScene);
         EditorSceneManager.SaveScene(activeScene);
 
-        Debug.Log("===> [SceneSetupHelper] CÀI ĐẶT BACKGROUND, VẬT CẢN VÀ BOUNDARY SCENE THÀNH CÔNG! <===");
+        Debug.Log("===> [SceneSetupHelper] CÀI ĐẶT TOÀN BỘ SCENE, UI D-PAD LỚN VÀ ENEMY B THÀNH CÔNG! <===");
     }
 
     [MenuItem("Tools/Build Game ra File Chạy .exe (Windows 64-bit)")]
@@ -131,6 +173,9 @@ public static class SceneSetupHelper
     [MenuItem("Tools/Build Game ra File Cài Đặt .apk (Android)")]
     public static void BuildAndroidAPK()
     {
+        // Tự động chuẩn bị toàn bộ Scene trước khi build
+        SetupScene();
+
         // 1. Cấu hình Package Name hợp lệ cho Android
         string currentId = PlayerSettings.GetApplicationIdentifier(BuildTargetGroup.Android);
         if (string.IsNullOrEmpty(currentId) || currentId.Contains("DefaultCompany"))

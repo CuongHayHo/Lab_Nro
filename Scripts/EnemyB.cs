@@ -88,6 +88,20 @@ public class EnemyB : MonoBehaviour
             parts.SyncAndApplyAll();
         }
 
+        if (headIdle == null || bodyIdle == null || legIdle == null)
+        {
+            PlayerA pA = FindFirstObjectByType<PlayerA>();
+            if (pA != null)
+            {
+                if (headIdle == null) headIdle = pA.enemyBHeadIdle;
+                if (headMove == null) headMove = pA.enemyBHeadMove;
+                if (bodyIdle == null) bodyIdle = pA.bodyIdle;
+                if (legIdle == null) legIdle = pA.legIdle;
+                if (bodyMoveFrames == null || bodyMoveFrames.Length == 0) bodyMoveFrames = pA.bodyMoveFrames;
+                if (legMoveFrames == null || legMoveFrames.Length == 0) legMoveFrames = pA.legMoveFrames;
+            }
+        }
+
 #if UNITY_EDITOR
         if (headIdle == null || bodyIdle == null || legIdle == null)
         {
@@ -117,6 +131,22 @@ public class EnemyB : MonoBehaviour
             parts.SyncAndApplyAll();
             parts.SetPose(headIdle, bodyIdle, legIdle);
         }
+
+        if (headIdle == null || bodyIdle == null || legIdle == null)
+        {
+            PlayerA pA = FindFirstObjectByType<PlayerA>();
+            if (pA != null)
+            {
+                if (headIdle == null) headIdle = pA.enemyBHeadIdle;
+                if (headMove == null) headMove = pA.enemyBHeadMove;
+                if (bodyIdle == null) bodyIdle = pA.bodyIdle;
+                if (legIdle == null) legIdle = pA.legIdle;
+                if (bodyMoveFrames == null || bodyMoveFrames.Length == 0) bodyMoveFrames = pA.bodyMoveFrames;
+                if (legMoveFrames == null || legMoveFrames.Length == 0) legMoveFrames = pA.legMoveFrames;
+            }
+            if (parts != null) parts.SetPose(headIdle, bodyIdle, legIdle);
+        }
+
 #if UNITY_EDITOR
         if (headIdle == null || bodyIdle == null || legIdle == null)
         {
